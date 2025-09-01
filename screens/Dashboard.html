@@ -1,0 +1,876 @@
+<!-- screens/Dashboard.html -->
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AllergoZyme — Dashboard</title>
+  <meta name="theme-color" content="#ffffff" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;700;800;900&display=swap" rel="stylesheet" />
+
+  <style>
+    :root{
+      --gold-1:#B8892E; --gold-2:#D4AF37; --gold-3:#F0D27A;
+      --bg:#fff; --text:#111; --muted:#666;
+      --red:#e74c3c; --orange:#f39c12; --green:#27ae60;
+      --ring: rgba(212,175,55,.35);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:var(--bg); color:var(--text);
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+      overflow:hidden;
+    }
+
+    /* HEADER */
+    header{
+      position:fixed; top:0; left:0; right:0; height:112px;
+      display:flex; align-items:center; justify-content:center; flex-direction:column;
+      background:linear-gradient(to bottom,rgba(255,255,255,.95),rgba(255,255,255,.35));
+      backdrop-filter:blur(6px); border-bottom:1px solid rgba(0,0,0,.05);
+      z-index:20;
+    }
+    header .logo{ height:84px; display:flex; align-items:center; justify-content:center; }
+    header .logo img{ height:84px; object-fit:contain; -webkit-user-drag:none; user-select:none; }
+
+    /* Search */
+    .search{
+      margin-top:6px; display:flex; align-items:center; gap:8px;
+      background:#fff; border:1px solid #eee; border-radius:999px; padding:8px 12px;
+      width:min(560px, 86%); box-shadow:0 6px 12px rgba(0,0,0,.06);
+    }
+    .search svg{ width:16px; height:16px; opacity:.7; }
+    .search input{ border:none; outline:none; font-size:14px; flex:1; min-width:140px; }
+
+    /* MAP */
+    #map{position:fixed; top:112px; left:0; right:0; bottom:110px; z-index:1;}
+    #map.hidden{display:none;}
+
+    /* FILTERS */
+    .filters{
+      position:fixed; top:122px; left:50%; transform:translateX(-50%);
+      display:flex; gap:8px; z-index:10;
+      background:#fff; border:1px solid #eee; border-radius:999px; padding:8px 12px;
+      box-shadow:0 10px 25px rgba(0,0,0,.08);
+    }
+    .chip{
+      padding:8px 14px; border-radius:999px; cursor:pointer;
+      font-weight:800; font-size:13px; background:#fff; border:1px solid #ddd;
+      transition:all .12s ease;
+    }
+    .chip.active{
+      color:#fff;
+      background:linear-gradient(135deg,var(--gold-1),var(--gold-2),var(--gold-3));
+      border:none; box-shadow:0 10px 24px rgba(0,0,0,.1);
+    }
+    .filters.hidden{ display:none; }
+
+    /* LEGEND */
+    .legend{
+      position:fixed; right:12px; bottom:130px; z-index:10;
+      background:#fff; border:1px solid #eee; border-radius:12px; padding:8px 10px;
+      box-shadow:0 10px 24px rgba(0,0,0,.08); font-size:12px;
+    }
+    .legend.hidden{ display:none; }
+    .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+    .dot.red{ background:var(--red) } .dot.orange{ background:var(--orange) } .dot.green{ background:var(--green) }
+
+    /* BOTTOM NAV */
+    .bottom{
+      position:fixed; left:0; right:0; bottom:12px;
+      display:flex; justify-content:center; z-index:30;
+      pointer-events:none;
+    }
+    .pill{
+      pointer-events:auto;
+      display:flex; justify-content:space-between; flex:1; max-width:560px;
+      background:#fff; border-radius:999px; padding:10px;
+      box-shadow:0 18px 40px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.5);
+      border:1px solid rgba(0,0,0,.06);
+    }
+    .tab{
+      flex:1; border:none; background:none; cursor:pointer;
+      font-weight:900; font-size:15px; color:#333; padding:12px;
+      border-radius:999px; transition:all .12s ease;
+    }
+    .tab.active{
+      color:#fff;
+      background:linear-gradient(135deg,var(--gold-1),var(--gold-2),var(--gold-3));
+      box-shadow:0 10px 24px rgba(0,0,0,.1);
+    }
+
+    /* PANEL COMPTE */
+    .panel{
+      position:fixed; top:112px; left:8px; right:8px; bottom:120px;
+      background:#fff; border-radius:18px; z-index:25;
+      box-shadow:0 18px 50px rgba(0,0,0,.12); border:1px solid #eee;
+      padding:18px; overflow:auto;
+      transform:translateY(12px); opacity:0; pointer-events:none; transition:.2s ease;
+    }
+    .panel.show{transform:translateY(0); opacity:1; pointer-events:auto;}
+
+    /* FAB (+) */
+    .fab{
+      position:fixed; bottom:150px; right:20px;
+      width:58px; height:58px; border-radius:50%; border:none; cursor:pointer;
+      font-size:28px; font-weight:900; color:#fff;
+      display:grid; place-items:center;
+      background:linear-gradient(135deg,var(--gold-1),var(--gold-2),var(--gold-3));
+      box-shadow:0 18px 40px rgba(0,0,0,.18);
+      z-index:32;
+    }
+    .fab.hidden{ display:none; }
+
+    /* FAB MENU (Ajout / Mes avis) */
+    .fab-menu{
+      position:fixed; right:20px; bottom:218px; z-index:31;
+      display:flex; flex-direction:column; gap:8px;
+      background:#fff; border:1px solid #eee; border-radius:14px; padding:10px;
+      box-shadow:0 18px 40px rgba(0,0,0,.18);
+    }
+    .fab-menu.hidden{ display:none; }
+    .menu-item{
+      border:none; border-radius:10px; padding:10px 12px; cursor:pointer; text-align:left; font-weight:800;
+      background:linear-gradient(135deg,var(--gold-1),var(--gold-2),var(--gold-3)); color:#fff;
+    }
+    .menu-item.secondary{
+      background:#f7f7f7; color:#333; border:1px solid #eee; font-weight:800;
+    }
+
+    /* MODALS */
+    .modal-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.3); display:none; z-index:40;}
+    .modal{
+      position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+      width:min(640px, calc(100% - 24px)); background:#fff; border-radius:16px;
+      padding:20px; display:none; z-index:41; border:1px solid #eee;
+      box-shadow:0 30px 80px rgba(0,0,0,.25);
+    }
+    .modal.show,.modal-backdrop.show{display:block;}
+    .modal h3{
+      margin:0 0 12px; font-size:20px; font-weight:900;
+      background:linear-gradient(135deg,var(--gold-1),var(--gold-2),var(--gold-3));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+    .field{display:flex; flex-direction:column; gap:6px; margin-bottom:12px;}
+    .field label{
+      font-size:13px; font-weight:800;
+      background:linear-gradient(135deg,var(--gold-1),var(--gold-2),var(--gold-3));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+    .field input,.field select,.field textarea{
+      border:1px solid #ddd; border-radius:12px; padding:10px; font-size:15px; background:#fff;
+      outline:none;
+    }
+    .field textarea{min-height:80px; resize:vertical;}
+    .actions{display:flex; justify-content:flex-end; gap:10px;}
+    .btn{
+      border:none; border-radius:999px; padding:10px 18px; cursor:pointer;
+      font-weight:800; color:#fff;
+      background:linear-gradient(135deg,var(--gold-1),var(--gold-2),var(--gold-3));
+    }
+    .btn.secondary{background:#eee; color:#333;}
+
+    /* ACCOUNT SECTIONS */
+    .section{
+      background:#fff; border:1px solid #eee; border-radius:18px; padding:16px; margin-bottom:16px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
+    }
+    .section h2{
+      margin:0 0 10px; font-size:18px; font-weight:900;
+      background:linear-gradient(120deg,var(--gold-1),var(--gold-2),var(--gold-3));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+    .row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media (max-width:720px){ .row{ grid-template-columns:1fr; } }
+    .info{ display:flex; flex-direction:column; gap:6px; }
+    .info label{
+      font-size:13px; font-weight:800;
+      background:linear-gradient(120deg,var(--gold-1),var(--gold-2),var(--gold-3));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+    .info input, .info select{
+      border:1px solid #ddd; border-radius:12px; padding:10px; font-size:15px;
+      outline:none; background:#fff;
+    }
+    .info input:focus, .info select:focus { box-shadow:0 0 0 2px var(--ring); border-color:var(--gold-2); }
+
+    .actions-save{ display:flex; justify-content:flex-end; gap:10px; }
+    .btn-outline{
+      border:1px solid #ddd; border-radius:999px; padding:10px 18px; background:#fff; cursor:pointer; font-weight:800;
+    }
+
+    /* JOURNAL */
+    .entries{ display:flex; flex-direction:column; gap:10px; }
+    .entry{
+      border:1px solid #eee; border-radius:12px; padding:10px;
+      display:grid; grid-template-columns:120px 1fr 90px 1fr auto; gap:8px; align-items:center;
+    }
+    @media (max-width:800px){ .entry{ grid-template-columns:1fr; } }
+    .sev{ font-weight:800; }
+    .sev.bad{ color:var(--red) } .sev.mid{ color:var(--orange) } .sev.good{ color:var(--green) }
+
+    .entry .del{
+      border:none; background:#fee2e2; color:#b91c1c; border-radius:8px; padding:6px 10px; cursor:pointer; font-weight:700;
+    }
+
+    /* Mes avis (liste) */
+    .review-card{
+      border:1px solid #eee; border-radius:12px; padding:12px; margin-bottom:10px;
+      display:grid; grid-template-columns:1fr 120px; gap:10px; align-items:start;
+    }
+    .review-actions{ display:flex; gap:8px; justify-content:flex-end; }
+    .note-dot{ width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:middle; margin-right:6px; }
+    .note-dot.green{background:var(--green)} .note-dot.orange{background:var(--orange)} .note-dot.red{background:var(--red)}
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo"><img id="app-logo" alt="Logo AllergoZyme"></div>
+    <div id="searchBar" class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 0 0 1.57-4.23C15.99 6.01 13.98 4 11.49 4S7 6.01 7 9.5 9.01 15 11.5 15a6.5 6.5 0 0 0 4.23-1.57l.27.28v.79L20 19.49 21.49 18 15.5 14zM11.5 13C9.57 13 8 11.43 8 9.5S9.57 6 11.5 6 15 7.57 15 9.5 13.43 13 11.5 13z"/></svg>
+      <input id="searchInput" type="text" placeholder="Adresse, ville ou nom d’établissement…" />
+    </div>
+  </header>
+
+  <!-- MAP -->
+  <div id="map"></div>
+
+  <!-- FILTERS -->
+  <div id="filters" class="filters" role="group" aria-label="Filtres catégories">
+    <button class="chip active" data-cat="restaurant">Restaurant</button>
+    <button class="chip active" data-cat="snack">Snack</button>
+    <button class="chip active" data-cat="boulangerie">Boulangerie</button>
+    <button class="chip active" data-cat="autre">Autre</button>
+  </div>
+
+  <!-- LEGEND -->
+  <div id="legend" class="legend">
+    <div><span class="dot green"></span>Bon (≥ 4)</div>
+    <div><span class="dot orange"></span>Moyen (3)</div>
+    <div><span class="dot red"></span>Mauvais (≤ 2)</div>
+  </div>
+
+  <!-- PANEL COMPTE -->
+  <section id="panel-account" class="panel" aria-label="Compte">
+    <div class="section">
+      <h2>Informations personnelles</h2>
+      <div class="row">
+        <div class="info"><label for="lastname">Nom</label><input id="lastname" autocomplete="family-name" /></div>
+        <div class="info"><label for="firstname">Prénom</label><input id="firstname" autocomplete="given-name" /></div>
+        <div class="info"><label for="dob">Date de naissance</label><input id="dob" type="date" /></div>
+        <div class="info"><label for="gender">Genre</label>
+          <select id="gender">
+            <option value="">—</option>
+            <option>Homme</option><option>Femme</option><option>Non binaire</option><option>Préfère ne pas dire</option>
+          </select>
+        </div>
+        <div class="info"><label for="email">Email (non modifiable)</label><input id="email" disabled /></div>
+        <div class="info"><label for="phone">Téléphone</label><input id="phone" inputmode="tel" autocomplete="tel" /></div>
+        <div class="info"><label for="address">Adresse</label><input id="address" autocomplete="address-line1" /></div>
+        <div class="info"><label for="zip">Code postal</label><input id="zip" inputmode="numeric" /></div>
+        <div class="info"><label for="city">Ville</label><input id="city" /></div>
+        <div class="info"><label for="country">Pays</label>
+          <select id="country">
+            <option>France</option><option>Belgique</option><option>Suisse</option><option>Canada</option><option>Autre</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Allergies</h2>
+      <div class="row">
+        <div class="info"><label><input type="checkbox" id="poly" /> Poly-allergique</label></div>
+        <div class="info"><label for="a1">Allergie 1</label><input id="a1" placeholder="ex : moutarde" /></div>
+        <div class="info"><label for="a2">Allergie 2</label><input id="a2" placeholder="ex : fruits à coque" /></div>
+        <div class="info"><label for="a3">Allergie 3</label><input id="a3" placeholder="ex : gluten" /></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Préférences</h2>
+      <div class="row">
+        <div class="info"><label><input type="checkbox" id="prefNotif" /> Notifications</label></div>
+        <div class="info"><label><input type="checkbox" id="prefGeo" /> Géolocalisation</label></div>
+        <div class="info"><label><input type="checkbox" id="prefDark" /> Mode sombre</label></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Carnet d’allergies</h2>
+      <div class="row">
+        <div class="info"><label for="dDate">Date</label><input id="dDate" type="date" /></div>
+        <div class="info"><label for="dTrigger">Déclencheur</label><input id="dTrigger" placeholder="ex : plat au restaurant X" /></div>
+        <div class="info"><label for="dSymptoms">Symptômes</label><input id="dSymptoms" placeholder="ex : démangeaisons, plaques…" /></div>
+        <div class="info">
+          <label for="dSeverity">Intensité</label>
+          <select id="dSeverity">
+            <option value="1">1 — légère</option>
+            <option value="2">2</option>
+            <option value="3">3 — moyenne</option>
+            <option value="4">4</option>
+            <option value="5">5 — forte</option>
+          </select>
+        </div>
+      </div>
+      <div class="info" style="margin-top:8px;">
+        <label for="dNotes">Notes</label>
+        <input id="dNotes" placeholder="Détails utiles (médicament pris, durée, etc.)" />
+      </div>
+      <div class="actions-save" style="margin-top:8px;">
+        <button id="addEntry" class="btn">Ajouter au carnet</button>
+        <button id="exportDiary" class="btn-outline">Exporter JSON</button>
+        <button id="clearDiary" class="btn-outline">Vider le carnet</button>
+      </div>
+      <div id="entries" class="entries" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="actions-save">
+      <button id="saveAccount" class="btn">Enregistrer</button>
+      <button id="logout" class="btn-outline">Se déconnecter</button>
+    </div>
+  </section>
+
+  <!-- BOTTOM NAV -->
+  <div class="bottom">
+    <div class="pill" role="tablist" aria-label="Navigation">
+      <button class="tab active" id="tab-map" role="tab" aria-selected="true">Carte</button>
+      <button class="tab" id="tab-account" role="tab" aria-selected="false">Compte</button>
+    </div>
+  </div>
+
+  <!-- FAB (+) -->
+  <button class="fab" id="addBtn" aria-label="Actions">+</button>
+
+  <!-- FAB MENU -->
+  <div id="fabMenu" class="fab-menu hidden">
+    <button id="actAdd"  class="menu-item">Ajouter un avis</button>
+    <button id="actMine" class="menu-item secondary">Mes avis</button>
+  </div>
+
+  <!-- MODAL : AJOUT AVIS -->
+  <div class="modal-backdrop" id="backdrop"></div>
+  <div class="modal" id="modal">
+    <h3>Déposer un avis</h3>
+    <form id="reviewForm">
+      <div class="field">
+        <label for="rName">Nom de l’établissement</label>
+        <input id="rName" required />
+      </div>
+      <div class="field">
+        <label for="rCategory">Catégorie</label>
+        <select id="rCategory" required>
+          <option value="restaurant">Restaurant</option>
+          <option value="snack">Snack</option>
+          <option value="boulangerie">Boulangerie</option>
+          <option value="autre">Autre</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="rNote">Note</label>
+        <select id="rNote" required>
+          <option value="5">5 — Excellent</option>
+          <option value="4">4 — Bon</option>
+          <option value="3">3 — Moyen</option>
+          <option value="2">2 — Mauvais</option>
+          <option value="1">1 — Très mauvais</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="rAddress">Adresse exacte</label>
+        <input id="rAddress" required />
+      </div>
+      <div class="field">
+        <label for="rComment">Commentaire (optionnel)</label>
+        <textarea id="rComment" placeholder="Décrivez votre expérience"></textarea>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn secondary" id="cancel">Annuler</button>
+        <button type="submit" class="btn">Publier</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- MODAL : MES AVIS -->
+  <div class="modal" id="myReviewsModal">
+    <h3>Mes avis</h3>
+    <div id="myReviewsList"></div>
+    <div class="actions" style="margin-top:10px;">
+      <button type="button" class="btn secondary" id="closeMyReviews">Fermer</button>
+    </div>
+  </div>
+
+  <!-- Supabase + config (ajouts) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../scripts/env.js"></script>
+
+  <!-- Core app -->
+  <script src="../scripts/app.js"></script>
+
+  <!-- Adapter Supabase (ajout) -->
+  <script src="../scripts/supabase-adapter.js"></script>
+
+  <script>
+    // ========= Logo robuste =========
+    (function loadLogo(){
+      const img = document.getElementById('app-logo'); if(!img) return;
+      const tries = [
+        '../assets/logo.png','../assets/Logo.png','../assets/logo.svg',
+        '/assets/logo.png','/assets/Logo.png','/assets/logo.svg',
+        './assets/logo.png','./assets/Logo.png','./assets/logo.svg'
+      ];
+      let i = 0, probe = new Image();
+      const next = () => {
+        if(i >= tries.length) return;
+        const url = tries[i++]; probe.onload = () => { img.src = url; }; probe.onerror = next; probe.src = url;
+      };
+      next();
+    })();
+
+    // ========= Auth =========
+    AZ.requireAuth(AZ.path.to('signIn'));
+    const me = AZ.currentUser();
+
+    // ========= Map =========
+    const map = L.map('map', { zoomControl:true }).setView([48.8566,2.3522],12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:20}).addTo(map);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos=> map.setView([pos.coords.latitude,pos.coords.longitude], 14));
+    }
+
+    const mapDiv = document.getElementById('map');
+    const filtersEl = document.getElementById('filters');
+    const legendEl  = document.getElementById('legend');
+    const searchBar = document.getElementById('searchBar');
+    const fab       = document.getElementById('addBtn');
+    const fabMenu   = document.getElementById('fabMenu');
+
+    const markers = [];
+    const cats = { restaurant:true, snack:true, boulangerie:true, autre:true };
+
+    const escapeHtml = (s)=> String(s||'').replace(/[<>&]/g, c=> ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+    const colorByNote = (n)=>{ n=Number(n); return n>=4?'green':(n===3?'orange':'red'); };
+
+    function addMarker(rec){
+      const col = colorByNote(rec.note);
+      const m = L.circleMarker([rec.lat, rec.lng], {
+        radius:9, color:col, fillColor:col, fillOpacity:.6, weight:2
+      }).addTo(map);
+
+      const etab  = rec.name || 'Établissement';
+      const author= (me && me.firstname) ? me.firstname : 'Anonyme';
+
+      m.bindPopup(`
+        <div style="font-weight:800">${escapeHtml(etab)}</div>
+        <div style="margin:2px 0 4px 0">
+          <span class="note-dot ${col}"></span>
+          Note&nbsp;: <b>${Number(rec.note)||'-'}</b> — par ${escapeHtml(author)}
+        </div>
+        <div style="font-size:12px;opacity:.8">${escapeHtml(rec.category)} • ${escapeHtml(rec.address||'')}</div>
+        ${rec.comment ? `<div style="margin-top:6px;font-size:12px">${escapeHtml(rec.comment)}</div>`:''}
+      `);
+
+      m._cat  = rec.category;
+      m._name = (etab||'').toLowerCase();
+      m._id   = rec.id;
+      markers.push(m);
+    }
+
+    function clearMarkers(){
+      markers.forEach(m=> map.removeLayer(m));
+      markers.length = 0;
+    }
+    function reloadMarkers(){
+      clearMarkers();
+      (AZ.getReviews() || []).forEach(addMarker);
+    }
+
+    // Charger existants
+    reloadMarkers();
+
+    // Filtres catégories
+    document.querySelectorAll('.chip').forEach(chip=>{
+      chip.addEventListener('click', ()=>{
+        const cat = chip.dataset.cat;
+        chip.classList.toggle('active');
+        cats[cat] = chip.classList.contains('active');
+        markers.forEach(m=>{
+          const keep = !!cats[m._cat];
+          if (keep && !map.hasLayer(m)) m.addTo(map);
+          if (!keep && map.hasLayer(m)) map.removeLayer(m);
+        });
+      });
+    });
+
+    // Recherche : nom OU adresse/ville
+    document.getElementById('searchInput').addEventListener('keydown', async (e)=>{
+      if(e.key !== 'Enter') return;
+      e.preventDefault();
+      const q = e.target.value.trim(); if(!q) return;
+
+      const match = markers.find(m=> m._name && m._name.includes(q.toLowerCase()));
+      if(match){ map.setView(match.getLatLng(), 16); match.openPopup(); return; }
+
+      try{
+        const { lat, lng } = await AZ.geocode(q);
+        map.setView([lat, lng], 15);
+      }catch{}
+    });
+
+    // ========= FAB menu =========
+    function toggleFabMenu(force){
+      const show = typeof force==='boolean' ? force : fabMenu.classList.contains('hidden');
+      fabMenu.classList.toggle('hidden', !show);
+    }
+    fab.addEventListener('click', ()=> toggleFabMenu());
+    document.addEventListener('click', (e)=>{
+      if (!fabMenu.classList.contains('hidden') &&
+          !fabMenu.contains(e.target) && e.target !== fab){
+        toggleFabMenu(false);
+      }
+    });
+
+    // ========= Modal Ajout =========
+    const modal = document.getElementById('modal');
+    const backdrop = document.getElementById('backdrop');
+    function openAdd(){ modal.classList.add('show'); backdrop.classList.add('show'); }
+    function closeAdd(){ modal.classList.remove('show'); backdrop.classList.remove('show'); }
+    document.getElementById('cancel').addEventListener('click', closeAdd);
+    backdrop.addEventListener('click', ()=>{ closeAdd(); closeMyReviews(); });
+
+    document.getElementById('actAdd').addEventListener('click', ()=>{
+      toggleFabMenu(false);
+      openAdd();
+    });
+
+    document.getElementById('reviewForm').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const name     = document.getElementById('rName').value.trim();
+      const category = document.getElementById('rCategory').value;
+      const note     = document.getElementById('rNote').value;
+      const address  = document.getElementById('rAddress').value.trim();
+      const comment  = document.getElementById('rComment').value.trim();
+      if(!name || !address){ alert('Veuillez renseigner le nom et l’adresse.'); return; }
+
+      try{
+        const { lat, lng } = await AZ.geocode(address);
+        const rec = AZ.addReview({ name, category, note:Number(note), address, comment, lat, lng });
+        addMarker(rec);
+        map.setView([lat, lng], 16);
+        closeAdd();
+        e.target.reset();
+      }catch(err){
+        alert(err?.message || 'Adresse introuvable.');
+      }
+    });
+
+    // ========= Mes avis (affichage/édition) =========
+    const MY_KEY = 'az_reviews'; // clé locale pour accéder aux avis via AZ._store
+    const myModal = document.getElementById('myReviewsModal');
+    const myList  = document.getElementById('myReviewsList');
+    const btnCloseMy = document.getElementById('closeMyReviews');
+
+    function openMyReviews(){ myModal.classList.add('show'); backdrop.classList.add('show'); renderMyReviews(); }
+    function closeMyReviews(){ myModal.classList.remove('show'); if(!modal.classList.contains('show')) backdrop.classList.remove('show'); }
+    document.getElementById('actMine').addEventListener('click', ()=>{ toggleFabMenu(false); openMyReviews(); });
+    btnCloseMy.addEventListener('click', closeMyReviews);
+
+    function reviewsRaw(){ return AZ._store.get(MY_KEY, []) || []; }
+    function saveReviewsRaw(arr){ AZ._store.set(MY_KEY, arr); }
+
+    function colorClassByNote(n){ n=+n; return n>=4 ? 'green' : (n===3 ? 'orange' : 'red'); }
+
+    function renderMyReviews(){
+      const all = reviewsRaw();
+      const mine = (all || []).filter(r => r.user_id === (me && me.id));
+      if (!mine.length){
+        myList.innerHTML = '<div class="muted">Vous n’avez pas encore rédigé d’avis.</div>';
+        return;
+      }
+      myList.innerHTML = '';
+      mine.sort((a,b)=> b.created_at - a.created_at);
+
+      mine.forEach(r=>{
+        const wrap = document.createElement('div');
+        wrap.className = 'review-card';
+        wrap.innerHTML = `
+          <div>
+            <div style="font-weight:900;margin-bottom:6px;">
+              <span class="note-dot ${colorClassByNote(r.note)}"></span>
+              <span>${escapeHtml(r.name||'Établissement')}</span>
+              <small style="opacity:.7"> • ${escapeHtml(r.category||'')}</small>
+            </div>
+
+            <div class="field">
+              <label>Nom de l’établissement</label>
+              <input data-f="name" value="${escapeHtml(r.name||'')}" />
+            </div>
+
+            <div class="field">
+              <label>Catégorie</label>
+              <select data-f="category">
+                <option value="restaurant" ${r.category==='restaurant'?'selected':''}>Restaurant</option>
+                <option value="snack" ${r.category==='snack'?'selected':''}>Snack</option>
+                <option value="boulangerie" ${r.category==='boulangerie'?'selected':''}>Boulangerie</option>
+                <option value="autre" ${r.category==='autre'?'selected':''}>Autre</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Note</label>
+              <select data-f="note">
+                <option value="5" ${+r.note===5?'selected':''}>5 — Excellent</option>
+                <option value="4" ${+r.note===4?'selected':''}>4 — Bon</option>
+                <option value="3" ${+r.note===3?'selected':''}>3 — Moyen</option>
+                <option value="2" ${+r.note===2?'selected':''}>2 — Mauvais</option>
+                <option value="1" ${+r.note===1?'selected':''}>1 — Très mauvais</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Adresse</label>
+              <input data-f="address" value="${escapeHtml(r.address||'')}" />
+            </div>
+
+            <div class="field">
+              <label>Commentaire</label>
+              <textarea data-f="comment" style="min-height:60px;">${escapeHtml(r.comment||'')}</textarea>
+            </div>
+          </div>
+
+          <div class="review-actions">
+            <button class="btn secondary" data-action="delete" data-id="${r.id}">Supprimer</button>
+            <button class="btn" data-action="save" data-id="${r.id}">Enregistrer</button>
+          </div>
+        `;
+        myList.appendChild(wrap);
+      });
+
+      // bind actions
+      myList.querySelectorAll('button[data-action="save"]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const id = btn.getAttribute('data-id');
+          const card = btn.closest('.review-card');
+          const read = (sel)=> card.querySelector(`[data-f="${sel}"]`);
+          const patch = {
+            name: (read('name').value||'').trim(),
+            category: read('category').value,
+            note: Number(read('note').value),
+            address: (read('address').value||'').trim(),
+            comment: (read('comment').value||'').trim()
+          };
+
+          // si l’adresse a changé, régéocoder
+          try{
+            const all = reviewsRaw();
+            const i = all.findIndex(x=> x.id === id);
+            if (i < 0) return;
+            const prev = all[i];
+            if (patch.address && patch.address !== prev.address){
+              const { lat, lng } = await AZ.geocode(patch.address);
+              patch.lat = lat; patch.lng = lng;
+            }
+            const next = { ...prev, ...patch, updated_at: Date.now() };
+            all[i] = next; saveReviewsRaw(all);
+            reloadMarkers();
+            renderMyReviews();
+            alert('Avis mis à jour.');
+          }catch(err){
+            alert(err?.message || 'Mise à jour impossible.');
+          }
+        });
+      });
+
+      myList.querySelectorAll('button[data-action="delete"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const id = btn.getAttribute('data-id');
+          if (!confirm('Supprimer cet avis ?')) return;
+          const all = reviewsRaw();
+          const i = all.findIndex(x=> x.id === id);
+          if (i >= 0){
+            all.splice(i,1); saveReviewsRaw(all);
+            reloadMarkers();
+            renderMyReviews();
+          }
+        });
+      });
+    }
+
+    // ========= Tabs (Carte / Compte) =========
+    const tabMap = document.getElementById('tab-map');
+    const tabAcc = document.getElementById('tab-account');
+    const panelAcc = document.getElementById('panel-account');
+
+    function setTab(tab){
+      tabMap.classList.toggle('active', tab==='map');
+      tabAcc.classList.toggle('active', tab==='account');
+
+      const onMap = tab==='map';
+      mapDiv.classList.toggle('hidden', !onMap);
+      filtersEl.classList.toggle('hidden', !onMap);
+      legendEl.classList.toggle('hidden', !onMap);
+      searchBar.style.display = onMap ? 'flex' : 'none';
+      fab.classList.toggle('hidden', !onMap);
+      fabMenu.classList.add('hidden');
+
+      panelAcc.classList.toggle('show', !onMap);
+      if(onMap){ setTimeout(()=> map.invalidateSize(), 50); }
+    }
+    tabMap.addEventListener('click', ()=> setTab('map'));
+    tabAcc.addEventListener('click', ()=> setTab('account'));
+
+    // ========= Compte : affichage & sauvegarde =========
+    const u = AZ.currentUser() || {};
+    const PREF_KEY = (id)=> `az_prefs_${id||'anon'}`;
+    const DIARY_KEY= (id)=> `az_diary_${id||'anon'}`;
+    const prefs = JSON.parse(localStorage.getItem(PREF_KEY(u.id))||'{}');
+
+    function fillAccount(){
+      document.getElementById('lastname').value  = u.lastname || '';
+      document.getElementById('firstname').value = u.firstname || '';
+      document.getElementById('dob').value       = u.dob || '';
+      document.getElementById('gender').value    = u.gender || '';
+      document.getElementById('email').value     = u.email || '';
+      document.getElementById('phone').value     = u.phone || '';
+      document.getElementById('address').value   = u.address || '';
+      document.getElementById('zip').value       = u.zip || '';
+      document.getElementById('city').value      = u.city || '';
+      document.getElementById('country').value   = u.country || 'France';
+
+      const arr = Array.isArray(u.allergies) ? u.allergies : [];
+      const isPoly = arr.includes('poly');
+      document.getElementById('poly').checked = isPoly;
+      document.getElementById('a1').value = isPoly ? '' : (arr[0]||'');
+      document.getElementById('a2').value = isPoly ? '' : (arr[1]||'');
+      document.getElementById('a3').value = isPoly ? '' : (arr[2]||'');
+
+      document.getElementById('prefNotif').checked = !!prefs.notif;
+      document.getElementById('prefGeo').checked   = !!prefs.geo;
+      document.getElementById('prefDark').checked  = !!prefs.dark;
+
+      toggleAllergyInputs();
+      renderDiary();
+    }
+    function toggleAllergyInputs(){
+      const disabled = document.getElementById('poly').checked;
+      ['a1','a2','a3'].forEach(id=>{
+        const el = document.getElementById(id);
+        el.disabled = disabled;
+        if(disabled) el.value = '';
+      });
+    }
+    document.getElementById('poly').addEventListener('change', toggleAllergyInputs);
+
+    document.getElementById('saveAccount').addEventListener('click', async ()=>{
+      try{
+        const payload = {
+          lastname:  document.getElementById('lastname').value.trim(),
+          firstname: document.getElementById('firstname').value.trim(),
+          dob:       document.getElementById('dob').value,
+          gender:    document.getElementById('gender').value,
+          phone:     document.getElementById('phone').value.trim(),
+          address:   document.getElementById('address').value.trim(),
+          zip:       document.getElementById('zip').value.trim(),
+          city:      document.getElementById('city').value.trim(),
+          country:   document.getElementById('country').value,
+          allergies: document.getElementById('poly').checked
+            ? ['poly']
+            : [document.getElementById('a1').value.trim(), document.getElementById('a2').value.trim(), document.getElementById('a3').value.trim()].filter(Boolean)
+        };
+        AZ.updateUser(payload);
+        const p = {
+          notif: document.getElementById('prefNotif').checked,
+          geo:   document.getElementById('prefGeo').checked,
+          dark:  document.getElementById('prefDark').checked
+        };
+        localStorage.setItem(PREF_KEY(u.id), JSON.stringify(p));
+        alert('Modifications enregistrées.');
+      }catch(err){
+        alert(err?.message || 'Sauvegarde impossible.');
+      }
+    });
+
+    document.getElementById('logout').addEventListener('click', ()=> AZ.signOut());
+
+    // ========= Journal (carnet) =========
+    function readDiary(){ return JSON.parse(localStorage.getItem(DIARY_KEY(u.id))||'[]'); }
+    function writeDiary(list){ localStorage.setItem(DIARY_KEY(u.id), JSON.stringify(list)); }
+    function sevClass(n){ n=+n; if(n>=4) return 'bad'; if(n===3) return 'mid'; return 'good'; }
+    function sevLabel(n){ n=+n; return n>=4?'forte':(n===3?'moyenne':'légère'); }
+
+    function renderDiary(){
+      const box = document.getElementById('entries');
+      const data = readDiary();
+      if(!data.length){ box.innerHTML = '<div class="muted">Aucune entrée pour le moment.</div>'; return; }
+      box.innerHTML = '';
+      data.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+      data.forEach((e,i)=>{
+        const wrap = document.createElement('div');
+        wrap.className = 'entry';
+        wrap.innerHTML = `
+          <div><strong>${e.date || ''}</strong></div>
+          <div><div><b>Déclencheur :</b> ${escapeHtml(e.trigger)||'-'}</div><div><b>Symptômes :</b> ${escapeHtml(e.symptoms)||'-'}</div></div>
+          <div class="sev ${sevClass(e.severity)}">Intensité : ${e.severity} (${sevLabel(e.severity)})</div>
+          <div>${e.notes ? ('<b>Notes :</b> '+escapeHtml(e.notes)) : ''}</div>
+          <div><button class="del" data-i="${i}">Supprimer</button></div>
+        `;
+        box.appendChild(wrap);
+      });
+      box.querySelectorAll('.del').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const idx = Number(btn.getAttribute('data-i'));
+          const arr = readDiary(); arr.splice(idx,1); writeDiary(arr); renderDiary();
+        });
+      });
+    }
+
+    (function initDiaryForm(){
+      const d = new Date(); const iso = d.toISOString().slice(0,10);
+      document.getElementById('dDate').value = iso;
+    })();
+
+    document.getElementById('addEntry').addEventListener('click', ()=>{
+      const rec = {
+        date: document.getElementById('dDate').value,
+        trigger: document.getElementById('dTrigger').value.trim(),
+        symptoms: document.getElementById('dSymptoms').value.trim(),
+        severity: Number(document.getElementById('dSeverity').value),
+        notes: document.getElementById('dNotes').value.trim()
+      };
+      const arr = readDiary(); arr.push(rec); writeDiary(arr); renderDiary();
+      document.getElementById('dTrigger').value='';
+      document.getElementById('dSymptoms').value='';
+      document.getElementById('dNotes').value='';
+    });
+
+    document.getElementById('clearDiary').addEventListener('click', ()=>{
+      if (confirm('Vider tout le carnet ?')){ writeDiary([]); renderDiary(); }
+    });
+
+    document.getElementById('exportDiary').addEventListener('click', ()=>{
+      const blob = new Blob([ JSON.stringify(readDiary(), null, 2) ], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement('a'), { href:url, download:'carnet-allergies.json' });
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    // Premier rendu
+    fillAccount();
+    setTab('map');
+    window.addEventListener('resize', ()=> map.invalidateSize());
+  </script>
+</body>
+</html>

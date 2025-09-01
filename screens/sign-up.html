@@ -1,0 +1,356 @@
+<!-- screens/sign-up.html -->
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AllergoZyme — Inscription</title>
+  <meta name="theme-color" content="#ffffff" />
+
+  <!-- Perf & fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
+  <!-- Précharge le logo si le chemin est OK -->
+  <link rel="preload" href="../assets/logo.png" as="image" />
+
+  <style>
+    :root{
+      --gold-a:#B8892E; --gold-b:#D4AF37; --gold-c:#F0D27A;
+      --bg:#ffffff; --text:#111; --muted:#6b7280; --ring:rgba(212,175,55,.35); --danger:#b91c1c;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:var(--bg); color:var(--text);
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    }
+
+    /* Layout “verre” centré (un peu plus bas pour éviter tout chevauchement) */
+    .wrap{
+      min-height:100dvh;
+      display:grid; place-items:center;
+      padding:56px 32px 40px; /* ↑ plus d'espace en haut */
+      position:relative; isolation:isolate;
+    }
+    .halo{
+      position:absolute; inset:auto -20% 25% -20%;
+      height:280px; filter:blur(60px); opacity:.15; z-index:-1;
+      background:radial-gradient(60% 100% at 50% 50%, var(--gold-c), transparent 70%);
+    }
+    .card{
+      width:min(760px,100%);
+      display:flex; flex-direction:column; align-items:center; gap:22px; text-align:center;
+      background:rgba(255,255,255,.72);
+      border:1px solid rgba(0,0,0,.06); border-radius:28px;
+      padding:32px 24px 28px; margin-top:10px; /* ↓ légèrement plus bas */
+      box-shadow:0 18px 50px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.65);
+      backdrop-filter:blur(8px);
+      overflow:clip; /* empêche tout débord visuel */
+    }
+
+    /* Logo (robuste, pas de fallback texte) */
+    .logo{width:160px;height:160px;display:flex;align-items:center;justify-content:center;}
+    #app-logo{width:100%;height:100%;object-fit:contain;display:block;-webkit-user-drag:none;user-select:none;}
+
+    /* Titres dorés animés */
+    h1.title{
+      font-weight:900; font-size:28px; margin:0;
+      background:linear-gradient(120deg,var(--gold-a),var(--gold-b),var(--gold-c));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+      animation: goldShift 8s ease-in-out infinite;
+    }
+    .subtitle{font-size:14px;color:var(--muted);margin-top:-6px;}
+
+    /* Formulaire */
+    form{
+      width:100%; max-width:720px;
+      display:flex; flex-direction:column; gap:22px; /* + d’air entre sections */
+      text-align:left;
+    }
+    .section{
+      background:#fff; border:1px solid #eee; border-radius:18px; padding:16px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+      position:relative;
+    }
+    .section h2{
+      margin:0 0 10px 0; font-size:16px; font-weight:900;
+      background:linear-gradient(120deg,var(--gold-a),var(--gold-b),var(--gold-c));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+    @media (max-width:720px){ .row,.row-3{grid-template-columns:1fr;} }
+
+    .field{display:flex;flex-direction:column;gap:6px;}
+    .field label{
+      font-size:13px; font-weight:800;
+      background:linear-gradient(120deg,var(--gold-a),var(--gold-b),var(--gold-c));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+    .field input, .field select{
+      border:1px solid #ddd; border-radius:12px; padding:12px 14px; font-size:16px; background:#fff; outline:none;
+    }
+    .field input:focus, .field select:focus{
+      border-color:var(--gold-b); box-shadow:0 0 0 2px rgba(212,175,55,.25);
+    }
+
+    .choices{display:flex;gap:12px;flex-wrap:wrap;border:1px solid #eee;border-radius:12px;padding:10px 12px;background:#fff;}
+    .choices label{display:flex;align-items:center;gap:8px;font-size:14px;color:#333;font-weight:600;}
+    .hint{font-size:12px;color:#666;margin-top:-4px;}
+
+    .error{display:none;background:#fee2e2;color:var(--danger);border:1px solid #fecaca;padding:10px 12px;border-radius:10px;font-size:13px;}
+    .error.show{display:block;}
+
+    .btn{
+      width:100%; max-width:720px; appearance:none; border:none; cursor:pointer; color:#fff; font-weight:800; font-size:18px;
+      padding:16px 24px; border-radius:999px;
+      background:linear-gradient(135deg,var(--gold-a),var(--gold-b),var(--gold-c));
+      box-shadow:0 14px 30px rgba(212,175,55,.25), inset 0 1px 0 rgba(255,255,255,.45);
+      transition: transform .08s ease, opacity .08s ease, box-shadow .12s ease;
+      position:relative; overflow:hidden; text-align:center;
+    }
+    .btn::after{
+      content:""; position:absolute; inset:0;
+      background:linear-gradient(100deg, transparent 0%, rgba(255,255,255,.35) 40%, transparent 60%);
+      transform: translateX(-120%); transition:transform .6s ease; mix-blend-mode:soft-light;
+    }
+    .btn:hover::after{ transform: translateX(120%); }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn:active{ transform: translateY(0); opacity:.92; }
+    .btn[disabled]{ opacity:.7; filter:grayscale(.15); cursor:not-allowed; }
+
+    .link{
+      display:block; text-align:center; margin-top:6px; font-weight:900; text-decoration:none;
+      background:linear-gradient(120deg,var(--gold-a),var(--gold-b),var(--gold-c));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+
+    @media (prefers-reduced-motion:reduce){ .btn::after, .btn, .title { animation:none!important; transition:none!important; } }
+    @keyframes goldShift{ 0%,100%{filter:hue-rotate(0deg) brightness(1);} 50%{filter:hue-rotate(-8deg) brightness(1.05);} }
+
+    /* Safe areas iOS */
+    @supports(padding:max(0px)){
+      .wrap{
+        padding:
+          max(56px, env(safe-area-inset-top))
+          max(32px, env(safe-area-inset-right))
+          max(40px, env(safe-area-inset-bottom))
+          max(32px, env(safe-area-inset-left));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="halo" aria-hidden="true"></div>
+
+    <section class="card" aria-labelledby="title">
+      <!-- Logo -->
+      <div class="logo" aria-hidden="true">
+        <img id="app-logo" alt="Logo AllergoZyme">
+      </div>
+
+      <!-- Titres -->
+      <h1 id="title" class="title">Inscription</h1>
+      <div class="subtitle">Créez votre compte pour accéder au tableau de bord.</div>
+
+      <!-- Erreur -->
+      <div id="error" class="error" role="alert" aria-live="polite"></div>
+
+      <!-- Formulaire -->
+      <form id="signup-form" novalidate>
+        <!-- Identité -->
+        <div class="section">
+          <h2>Identité</h2>
+          <div class="choices" role="group" aria-label="Genre">
+            <label><input type="radio" name="gender" value="Homme" required> Homme</label>
+            <label><input type="radio" name="gender" value="Femme"> Femme</label>
+            <label><input type="radio" name="gender" value="Non binaire"> Non binaire</label>
+            <label><input type="radio" name="gender" value="Préfère ne pas dire"> Préfère ne pas dire</label>
+          </div>
+          <div class="row">
+            <div class="field"><label for="lastname">Nom</label><input id="lastname" autocomplete="family-name" required /></div>
+            <div class="field"><label for="firstname">Prénom</label><input id="firstname" autocomplete="given-name" required /></div>
+          </div>
+          <div class="row">
+            <div class="field"><label for="dob">Date de naissance</label><input id="dob" type="date" required /></div>
+            <div class="field"><label for="phone">Téléphone (optionnel)</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+33 ..." /></div>
+          </div>
+          <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email" required placeholder="ex : vous@email.com" /></div>
+        </div>
+
+        <!-- Adresse -->
+        <div class="section">
+          <h2>Adresse</h2>
+          <div class="row">
+            <div class="field"><label for="streetNumber">Numéro</label><input id="streetNumber" inputmode="numeric" placeholder="ex : 24" /></div>
+            <div class="field"><label for="street">Rue</label><input id="street" placeholder="ex : Rue de la Paix" /></div>
+          </div>
+          <div class="row">
+            <div class="field"><label for="building">Bâtiment / Appartement</label><input id="building" placeholder="ex : Bât. A, Apt 12" /></div>
+            <div class="field"><label for="addressExtra">Complément</label><input id="addressExtra" placeholder="ex : Code porte, étage, interphone…" /></div>
+          </div>
+          <div class="row">
+            <div class="field"><label for="zip">Code postal</label><input id="zip" inputmode="numeric" required /></div>
+            <div class="field"><label for="city">Ville</label><input id="city" required /></div>
+          </div>
+          <div class="field">
+            <label for="country">Pays</label>
+            <select id="country" required>
+              <option value="France" selected>France</option>
+              <option>Belgique</option><option>Suisse</option><option>Canada</option><option>Autre</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Allergies -->
+        <div class="section">
+          <h2>Allergies</h2>
+          <div class="choices" style="align-items:flex-start;">
+            <label><input type="checkbox" id="poly" /> Poly-allergique</label>
+          </div>
+          <div class="row-3" id="allergy-inputs">
+            <div class="field"><label for="a1">Allergie 1</label><input id="a1" placeholder="ex : moutarde" /></div>
+            <div class="field"><label for="a2">Allergie 2</label><input id="a2" placeholder="ex : fruits à coque" /></div>
+            <div class="field"><label for="a3">Allergie 3</label><input id="a3" placeholder="ex : gluten" /></div>
+          </div>
+          <div class="hint">Vous pouvez saisir jusqu’à 3 allergies <b>ou</b> cocher « Poly-allergique ».</div>
+        </div>
+
+        <!-- Sécurité -->
+        <div class="section">
+          <h2>Sécurité</h2>
+          <div class="row">
+            <div class="field"><label for="password">Mot de passe</label><input id="password" type="password" required placeholder="••••••••" /></div>
+            <div class="field"><label for="confirm">Confirmer</label><input id="confirm" type="password" required placeholder="••••••••" /></div>
+          </div>
+          <div class="choices" style="border:none;padding:0;">
+            <label><input type="checkbox" id="terms" required> J’accepte les Conditions et la Politique de confidentialité.</label>
+          </div>
+        </div>
+
+        <button class="btn" id="submit" type="submit">Créer mon compte</button>
+        <a class="link" id="to-signin" href="./sign-in.html">Déjà inscrit ? Identification</a>
+      </form>
+    </section>
+  </main>
+
+  <!-- IMPORTANT : ordre des scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../scripts/env.js"></script>
+  <script src="../scripts/app.js"></script>
+  <!-- Adapter Supabase (inoffensif tant que non configuré) -->
+  <script src="../scripts/supabase-adapter.js"></script>
+
+  <script>
+    // 0) Logo robuste (chemins multiples)
+    (function loadLogo(){
+      const img = document.getElementById('app-logo'); if(!img) return;
+      const candidates = [
+        '../assets/logo.png','../assets/Logo.png','../assets/logo.svg',
+        '/assets/logo.png','/assets/Logo.png','/assets/logo.svg',
+        './assets/logo.png','./assets/Logo.png','./assets/logo.svg'
+      ];
+      let i = 0; const probe = new Image();
+      const tryNext = () => {
+        if(i >= candidates.length) return;
+        const url = candidates[i++]; probe.onload = () => { img.src = url; };
+        probe.onerror = tryNext; probe.src = url;
+      };
+      tryNext();
+    })();
+
+    // 1) Corrige le lien si la page n’est pas servie depuis /screens/
+    (function ensurePaths(){
+      const inScreens = location.pathname.includes('/screens/');
+      if(!inScreens){
+        const si = document.getElementById('to-signin');
+        if (si && !si.getAttribute('href')?.includes('screens/')) {
+          si.setAttribute('href','./screens/sign-in.html');
+        }
+      }
+    })();
+
+    // 2) Poly-allergique : masque/affiche et désactive/efface les 3 champs
+    (function initAllergyToggle(){
+      const poly = document.getElementById('poly');
+      const container = document.getElementById('allergy-inputs');
+      const inputs = container.querySelectorAll('input');
+      function toggleAllergies(){
+        const hide = poly.checked;
+        container.style.display = hide ? 'none' : 'grid';
+        inputs.forEach(i => { i.disabled = hide; if(hide) i.value=''; });
+      }
+      poly.addEventListener('change', toggleAllergies);
+      toggleAllergies();
+    })();
+
+    // 3) Formulaire (API AZ — locale, et déjà prête pour l’adapter Supabase)
+    (function handleSignup(){
+      const form = document.getElementById('signup-form');
+      const err  = document.getElementById('error');
+      const btn  = document.getElementById('submit');
+      function showError(m){ err.textContent = m; err.classList.add('show'); }
+      function clearError(){ err.textContent = ''; err.classList.remove('show'); }
+
+      form.addEventListener('submit', async (e)=>{
+        e.preventDefault(); clearError();
+        if (!window.AZ){ showError("Application non initialisée. Vérifiez l’inclusion de env.js et app.js."); return; }
+
+        const payload = {
+          gender:    (document.querySelector('input[name="gender"]:checked')||{}).value || '',
+          lastname:  document.getElementById('lastname').value.trim(),
+          firstname: document.getElementById('firstname').value.trim(),
+          dob:       document.getElementById('dob').value,
+          phone:     document.getElementById('phone').value.trim(),
+          email:     document.getElementById('email').value.trim(),
+          zip:       document.getElementById('zip').value.trim(),
+          city:      document.getElementById('city').value.trim(),
+          country:   document.getElementById('country').value,
+          password:  document.getElementById('password').value
+        };
+
+        const confirm = document.getElementById('confirm').value;
+        if(payload.password !== confirm){ showError('Les mots de passe ne correspondent pas.'); return; }
+        if(!document.getElementById('terms').checked){ showError('Veuillez accepter les Conditions et la Politique de confidentialité.'); return; }
+
+        // Allergies
+        const poly = document.getElementById('poly');
+        payload.allergies = poly.checked
+          ? ['poly']
+          : [document.getElementById('a1').value.trim(), document.getElementById('a2').value.trim(), document.getElementById('a3').value.trim()].filter(Boolean);
+
+        // Adresse → ligne lisible
+        const streetNumber = document.getElementById('streetNumber').value.trim();
+        const street       = document.getElementById('street').value.trim();
+        const building     = document.getElementById('building').value.trim();
+        const addressExtra = document.getElementById('addressExtra').value.trim();
+        const partsMain = [streetNumber, street].filter(Boolean).join(' ');
+        const partsOpt  = [building, addressExtra].filter(Boolean).join(', ');
+        payload.address = [partsMain, partsOpt].filter(Boolean).join(', ');
+
+        try{
+          btn.disabled = true;
+          await AZ.createUser(payload);
+
+          // Patch champs détaillés (même API si on est sur Supabase)
+          const patch = {};
+          if(building)     patch.building       = building;
+          if(streetNumber) patch.street_number  = streetNumber;
+          if(street)       patch.street         = street;
+          if(addressExtra) patch.address_extra  = addressExtra;
+          if(Object.keys(patch).length){ try{ await AZ.updateUser(patch); }catch(_){} }
+
+          AZ.path.go('dashboard');
+        }catch(err){
+          showError(err?.message || 'Création impossible. Veuillez réessayer.');
+        }finally{
+          btn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!-- screens/index.html -->
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AllergoZyme — Accueil</title>
+  <meta name="theme-color" content="#ffffff" />
+
+  <!-- Perf & fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <!-- Préfetch -->
+  <link rel="prefetch" href="./sign-in.html">
+  <link rel="prefetch" href="./sign-up.html">
+
+  <style>
+    :root{
+      --gold-a:#B8892E; --gold-b:#D4AF37; --gold-c:#F0D27A;
+      --bg:#ffffff; --text:#111111; --muted:#6b7280; --ring: rgba(212,175,55,.35);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:var(--bg); color:var(--text);
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    }
+
+    .wrap{
+      min-height:100dvh; display:grid; place-items:center; padding:32px;
+      position:relative; isolation:isolate;
+    }
+    .halo{
+      position:absolute; inset:auto -20% 25% -20%;
+      height:280px; filter:blur(60px); opacity:.15; z-index:-1;
+      background: radial-gradient(60% 100% at 50% 50%, var(--gold-c), transparent 70%);
+    }
+    .card{
+      width:min(540px, 100%); display:flex; flex-direction:column; align-items:center; gap:28px; text-align:center;
+      background:rgba(255,255,255,.72); border:1px solid rgba(0,0,0,.06); border-radius:28px; padding:32px 24px 28px;
+      box-shadow: 0 18px 50px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.65); backdrop-filter: blur(8px);
+    }
+
+    /* Logo seulement — pas de fallback en texte */
+    .logo{ width:220px; height:220px; display:flex; align-items:center; justify-content:center; }
+    #app-logo{ width:100%; height:100%; object-fit:contain; display:block; -webkit-user-drag:none; user-select:none; }
+
+    .title{
+      font-weight:900; font-size:20px;
+      background:linear-gradient(120deg,var(--gold-a),var(--gold-b),var(--gold-c));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+      opacity:.65; letter-spacing:.2px; animation: goldShift 8s ease-in-out infinite;
+    }
+
+    .buttons{ width:100%; display:flex; flex-direction:column; align-items:center; gap:14px; }
+    .btn{
+      width:100%; max-width:360px; appearance:none; border:none; cursor:pointer; color:#fff; font-weight:800; font-size:18px;
+      padding:16px 24px; border-radius:999px;
+      background:linear-gradient(135deg,var(--gold-a),var(--gold-b),var(--gold-c));
+      box-shadow: 0 14px 30px rgba(212,175,55,.25), inset 0 1px 0 rgba(255,255,255,.45);
+      transition: transform .08s ease, opacity .08s ease, box-shadow .12s ease;
+      position:relative; overflow:hidden; text-decoration:none; text-align:center;
+    }
+    .btn::after{
+      content:""; position:absolute; inset:0;
+      background:linear-gradient(100deg, transparent 0%, rgba(255,255,255,.35) 40%, transparent 60%);
+      transform: translateX(-120%); transition:transform .6s ease; mix-blend-mode:soft-light;
+    }
+    .btn:hover::after{ transform: translateX(120%); }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn:active{ transform: translateY(0); opacity:.92; }
+    .btn:focus-visible{ outline:2px solid var(--ring); outline-offset:3px; }
+
+    footer{ margin-top:6px; font-size:12px; color:#69707a; }
+
+    @media (prefers-reduced-motion: reduce){
+      .btn::after, .btn, .title { animation: none !important; transition:none !important; }
+    }
+    @keyframes goldShift{ 0%,100%{ filter:hue-rotate(0deg) brightness(1);} 50%{ filter:hue-rotate(-8deg) brightness(1.05);} }
+
+    @supports(padding:max(0px)){
+      .wrap{ padding:
+        max(32px, env(safe-area-inset-top))
+        max(32px, env(safe-area-inset-right))
+        max(32px, env(safe-area-inset-bottom))
+        max(32px, env(safe-area-inset-left)); }
+    }
+    noscript { display:block; text-align:center; color:#b91c1c; font-weight:700; margin-top:16px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="halo" aria-hidden="true"></div>
+
+    <section class="card" aria-labelledby="app-title">
+      <!-- Logo centré -->
+      <div class="logo" aria-hidden="true">
+        <img id="app-logo" alt="Logo AllergoZyme">
+      </div>
+
+      <div id="app-title" class="title">Bienvenue</div>
+
+      <nav class="buttons" role="group" aria-label="Actions de connexion">
+        <a class="btn" id="btn-identification" href="./sign-in.html" role="button" aria-label="Aller à Identification">Identification</a>
+        <a class="btn" id="btn-inscription"   href="./sign-up.html"  role="button" aria-label="Aller à Inscription">Inscription</a>
+      </nav>
+
+      <footer>© AllergoZyme</footer>
+      <noscript>JavaScript est requis pour utiliser l’application.</noscript>
+    </section>
+  </main>
+
+  <!-- Librairie Supabase + config + cœur app + adapter (dans cet ordre) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../scripts/env.js"></script>
+  <script src="../scripts/app.js"></script>
+  <script src="../scripts/supabase-adapter.js"></script>
+
+  <script>
+    // 1) Charger le logo en testant plusieurs chemins & casses (utile en Docker/nginx)
+    (function loadLogo(){
+      const img = document.getElementById('app-logo');
+      if(!img) return;
+      const candidates = [
+        '../assets/logo.png','../assets/Logo.png','../assets/logo.svg',
+        '/assets/logo.png','/assets/Logo.png','/assets/logo.svg',
+        './assets/logo.png','./assets/Logo.png','./assets/logo.svg'
+      ];
+      let i = 0; const probe = new Image();
+      const tryNext = () => {
+        if(i >= candidates.length) return;
+        const url = candidates[i++]; probe.onload = () => { img.src = url; };
+        probe.onerror = tryNext; probe.src = url;
+      };
+      tryNext();
+    })();
+
+    // 2) Corriger les liens si ouvert hors /screens/
+    (function ensurePaths(){
+      try{
+        const inScreens = location.pathname.includes('/screens/');
+        if(!inScreens){
+          const id = document.getElementById('btn-identification');
+          const ins = document.getElementById('btn-inscription');
+          if(id) id.setAttribute('href', './screens/sign-in.html');
+          if(ins) ins.setAttribute('href', './screens/sign-up.html');
+        }
+      }catch(e){}
+    })();
+
+    // 3) Redirection auto si déjà connecté
+    (function autoRedirect(){
+      const goDash = me => { if(me) AZ.path.go('dashboard'); };
+      if (window.AZ) {
+        Promise.resolve(AZ.currentUser && AZ.currentUser()).then(goDash).catch(()=>{});
+      } else {
+        document.addEventListener('AZ_READY', () => {
+          Promise.resolve(AZ.currentUser && AZ.currentUser()).then(goDash).catch(()=>{});
+        }, { once:true });
+      }
+    })();
+
+    // 4) Accessibilité focus clavier
+    (function a11y(){
+      let byKeyboard = false;
+      window.addEventListener('keydown', e => { if(e.key === 'Tab') byKeyboard = true; }, {passive:true});
+      window.addEventListener('mousedown', () => { byKeyboard = false; }, {passive:true});
+      document.addEventListener('focusin', (e)=>{
+        if(byKeyboard && e.target.classList && e.target.classList.contains('btn')){
+          e.target.style.outline = '2px solid var(--ring)';
+          e.target.style.outlineOffset = '3px';
+        }
+      });
+      document.addEventListener('focusout', (e)=>{
+        if(e.target.classList && e.target.classList.contains('btn')){
+          e.target.style.outline = 'none';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
