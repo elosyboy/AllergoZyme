@@ -413,14 +413,14 @@
     </div>
   </div>
 
-  <!-- Supabase + config (ajouts) -->
+  <!-- Supabase + config -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../scripts/env.js"></script>
 
   <!-- Core app -->
   <script src="../scripts/app.js"></script>
 
-  <!-- Adapter Supabase (ajout) -->
+  <!-- Adapter Supabase -->
   <script src="../scripts/supabase-adapter.js"></script>
 
   <script>
@@ -471,7 +471,7 @@
       }).addTo(map);
 
       const etab  = rec.name || 'Établissement';
-      const author= (me && me.firstname) ? me.firstname : 'Anonyme';
+      const author= (rec && rec.user_firstname) ? rec.user_firstname : ((me && me.firstname) ? me.firstname : 'Anonyme');
 
       m.bindPopup(`
         <div style="font-weight:800">${escapeHtml(etab)}</div>
@@ -493,9 +493,18 @@
       markers.forEach(m=> map.removeLayer(m));
       markers.length = 0;
     }
-    function reloadMarkers(){
+
+    // ⚠️ rendu compatible Supabase : préfère getReviewsAsync si disponible
+    async function reloadMarkers(){
       clearMarkers();
-      (AZ.getReviews() || []).forEach(addMarker);
+      if (AZ.getReviewsAsync){
+        try{
+          const list = await AZ.getReviewsAsync();
+          (list || []).forEach(addMarker);
+        }catch(_){}
+      } else {
+        (AZ.getReviews() || []).forEach(addMarker);
+      }
     }
 
     // Charger existants
@@ -567,7 +576,8 @@
 
       try{
         const { lat, lng } = await AZ.geocode(address);
-        const rec = AZ.addReview({ name, category, note:Number(note), address, comment, lat, lng });
+        // ⬇️ IMPORTANT: attendre l’insertion (Supabase)
+        const rec = await AZ.addReview({ name, category, note:Number(note), address, comment, lat, lng });
         addMarker(rec);
         map.setView([lat, lng], 16);
         closeAdd();
