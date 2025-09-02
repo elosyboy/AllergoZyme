@@ -389,10 +389,23 @@
           <option value="1">1 — Très mauvais</option>
         </select>
       </div>
+
+      <!-- Ajouts demandés : Adresse + Ville + Code postal -->
       <div class="field">
-        <label for="rAddress">Adresse exacte</label>
-        <input id="rAddress" required />
+        <label for="rAddress">Adresse (numéro + rue)</label>
+        <input id="rAddress" required placeholder="ex : 10 Rue de la Paix" />
       </div>
+      <div class="row">
+        <div class="field">
+          <label for="rCity">Ville</label>
+          <input id="rCity" required placeholder="ex : Paris" />
+        </div>
+        <div class="field">
+          <label for="rZip">Code postal</label>
+          <input id="rZip" inputmode="numeric" required placeholder="ex : 75001" />
+        </div>
+      </div>
+
       <div class="field">
         <label for="rComment">Commentaire (optionnel)</label>
         <textarea id="rComment" placeholder="Décrivez votre expérience"></textarea>
@@ -464,9 +477,15 @@
     const escapeHtml = (s)=> String(s||'').replace(/[<>&]/g, c=> ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
     const colorByNote = (n)=>{ n=Number(n); return n>=4?'green':(n===3?'orange':'red'); };
 
+    function isFiniteLatLng(obj){
+      const lat = Number(obj?.lat), lng = Number(obj?.lng);
+      return Number.isFinite(lat) && Number.isFinite(lng);
+    }
+
     function addMarker(rec){
+      if(!isFiniteLatLng(rec)) return; // sécurité contre "Invalid LatLng"
       const col = colorByNote(rec.note);
-      const m = L.circleMarker([rec.lat, rec.lng], {
+      const m = L.circleMarker([Number(rec.lat), Number(rec.lng)], {
         radius:9, color:col, fillColor:col, fillOpacity:.6, weight:2
       }).addTo(map);
 
@@ -494,16 +513,18 @@
       markers.length = 0;
     }
 
-    // ⚠️ rendu compatible Supabase : préfère getReviewsAsync si disponible
+    // Préfère Supabase si dispo, sinon localStorage
     async function reloadMarkers(){
       clearMarkers();
-      if (AZ.getReviewsAsync){
-        try{
+      try{
+        if (typeof AZ.getReviewsAsync === 'function') {
           const list = await AZ.getReviewsAsync();
-          (list || []).forEach(addMarker);
-        }catch(_){}
-      } else {
-        (AZ.getReviews() || []).forEach(addMarker);
+          (list || []).filter(isFiniteLatLng).forEach(addMarker);
+        } else {
+          (AZ.getReviews() || []).filter(isFiniteLatLng).forEach(addMarker);
+        }
+      }catch(e){
+        console.warn('reloadMarkers:', e);
       }
     }
 
@@ -535,7 +556,7 @@
 
       try{
         const { lat, lng } = await AZ.geocode(q);
-        map.setView([lat, lng], 15);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) map.setView([lat, lng], 15);
       }catch{}
     });
 
@@ -570,13 +591,20 @@
       const name     = document.getElementById('rName').value.trim();
       const category = document.getElementById('rCategory').value;
       const note     = document.getElementById('rNote').value;
-      const address  = document.getElementById('rAddress').value.trim();
+      const addrLine = document.getElementById('rAddress').value.trim();
+      const city     = document.getElementById('rCity').value.trim();
+      const zip      = document.getElementById('rZip').value.trim();
       const comment  = document.getElementById('rComment').value.trim();
-      if(!name || !address){ alert('Veuillez renseigner le nom et l’adresse.'); return; }
 
+      if(!name || !addrLine || !city || !zip){
+        alert('Veuillez renseigner le nom, l’adresse, la ville et le code postal.');
+        return;
+      }
+
+      const address = [addrLine, `${zip} ${city}`].filter(Boolean).join(', ');
       try{
-        const { lat, lng } = await AZ.geocode(address);
-        // ⬇️ IMPORTANT: attendre l’insertion (Supabase)
+        const { lat, lng } = await AZ.geocode([addrLine, city, zip].filter(Boolean).join(' '));
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Coordonnées invalides.');
         const rec = await AZ.addReview({ name, category, note:Number(note), address, comment, lat, lng });
         addMarker(rec);
         map.setView([lat, lng], 16);
@@ -587,8 +615,7 @@
       }
     });
 
-    // ========= Mes avis (affichage/édition) =========
-    const MY_KEY = 'az_reviews'; // clé locale pour accéder aux avis via AZ._store
+    // ========= Mes avis (Supabase si dispo, sinon local) =========
     const myModal = document.getElementById('myReviewsModal');
     const myList  = document.getElementById('myReviewsList');
     const btnCloseMy = document.getElementById('closeMyReviews');
@@ -598,125 +625,155 @@
     document.getElementById('actMine').addEventListener('click', ()=>{ toggleFabMenu(false); openMyReviews(); });
     btnCloseMy.addEventListener('click', closeMyReviews);
 
-    function reviewsRaw(){ return AZ._store.get(MY_KEY, []) || []; }
-    function saveReviewsRaw(arr){ AZ._store.set(MY_KEY, arr); }
+    const USING_REMOTE = (typeof AZ.getReviewsAsync === 'function') && !!AZ.sb;
+
+    async function loadMyReviews(){
+      if (USING_REMOTE && me && me.id){
+        const { data, error } = await AZ.sb.from('reviews')
+          .select('*')
+          .eq('user_id', me.id)
+          .order('created_at', { ascending:false });
+        if (error) throw new Error(error.message||'Chargement impossible.');
+        return data || [];
+      } else {
+        const all = AZ._store.get('az_reviews', []) || [];
+        return (all || []).filter(r => r.user_id === (me && me.id))
+                          .sort((a,b)=> (b.created_at||0) - (a.created_at||0));
+      }
+    }
+
+    async function saveReviewPatch(id, patch, prev){
+      // si l’adresse change et que pas de lat/lng fournis -> géocoder
+      if (patch.address && (!prev || patch.address !== prev.address) && (!patch.lat || !patch.lng)) {
+        try{
+          const { lat, lng } = await AZ.geocode(patch.address);
+          patch.lat = lat; patch.lng = lng;
+        }catch{}
+      }
+
+      if (USING_REMOTE){
+        const { error } = await AZ.sb.from('reviews').update(patch).eq('id', id);
+        if (error) throw new Error(error.message || 'Mise à jour impossible.');
+      }else{
+        const arr = AZ._store.get('az_reviews', []) || [];
+        const i = arr.findIndex(x=> x.id === id);
+        if (i >= 0){ arr[i] = { ...arr[i], ...patch, updated_at: Date.now() }; }
+        AZ._store.set('az_reviews', arr);
+      }
+    }
+
+    async function deleteReview(id){
+      if (USING_REMOTE){
+        const { error } = await AZ.sb.from('reviews').delete().eq('id', id);
+        if (error) throw new Error(error.message || 'Suppression impossible.');
+      }else{
+        const arr = AZ._store.get('az_reviews', []) || [];
+        const i = arr.findIndex(x=> x.id === id);
+        if (i >= 0){ arr.splice(i,1); AZ._store.set('az_reviews', arr); }
+      }
+    }
 
     function colorClassByNote(n){ n=+n; return n>=4 ? 'green' : (n===3 ? 'orange' : 'red'); }
 
-    function renderMyReviews(){
-      const all = reviewsRaw();
-      const mine = (all || []).filter(r => r.user_id === (me && me.id));
-      if (!mine.length){
-        myList.innerHTML = '<div class="muted">Vous n’avez pas encore rédigé d’avis.</div>';
-        return;
-      }
-      myList.innerHTML = '';
-      mine.sort((a,b)=> b.created_at - a.created_at);
+    async function renderMyReviews(){
+      try{
+        const mine = await loadMyReviews();
+        if (!mine.length){
+          myList.innerHTML = '<div class="muted">Vous n’avez pas encore rédigé d’avis.</div>';
+          return;
+        }
+        myList.innerHTML = '';
+        mine.forEach(r=>{
+          const wrap = document.createElement('div');
+          wrap.className = 'review-card';
+          wrap.innerHTML = `
+            <div>
+              <div style="font-weight:900;margin-bottom:6px;">
+                <span class="note-dot ${colorClassByNote(r.note)}"></span>
+                <span>${escapeHtml(r.name||'Établissement')}</span>
+                <small style="opacity:.7"> • ${escapeHtml(r.category||'')}</small>
+              </div>
 
-      mine.forEach(r=>{
-        const wrap = document.createElement('div');
-        wrap.className = 'review-card';
-        wrap.innerHTML = `
-          <div>
-            <div style="font-weight:900;margin-bottom:6px;">
-              <span class="note-dot ${colorClassByNote(r.note)}"></span>
-              <span>${escapeHtml(r.name||'Établissement')}</span>
-              <small style="opacity:.7"> • ${escapeHtml(r.category||'')}</small>
+              <div class="field">
+                <label>Nom de l’établissement</label>
+                <input data-f="name" value="${escapeHtml(r.name||'')}" />
+              </div>
+
+              <div class="field">
+                <label>Catégorie</label>
+                <select data-f="category">
+                  <option value="restaurant" ${r.category==='restaurant'?'selected':''}>Restaurant</option>
+                  <option value="snack" ${r.category==='snack'?'selected':''}>Snack</option>
+                  <option value="boulangerie" ${r.category==='boulangerie'?'selected':''}>Boulangerie</option>
+                  <option value="autre" ${r.category==='autre'?'selected':''}>Autre</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label>Note</label>
+                <select data-f="note">
+                  <option value="5" ${+r.note===5?'selected':''}>5 — Excellent</option>
+                  <option value="4" ${+r.note===4?'selected':''}>4 — Bon</option>
+                  <option value="3" ${+r.note===3?'selected':''}>3 — Moyen</option>
+                  <option value="2" ${+r.note===2?'selected':''}>2 — Mauvais</option>
+                  <option value="1" ${+r.note===1?'selected':''}>1 — Très mauvais</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label>Adresse</label>
+                <input data-f="address" value="${escapeHtml(r.address||'')}" />
+              </div>
+
+              <div class="field">
+                <label>Commentaire</label>
+                <textarea data-f="comment" style="min-height:60px;">${escapeHtml(r.comment||'')}</textarea>
+              </div>
             </div>
 
-            <div class="field">
-              <label>Nom de l’établissement</label>
-              <input data-f="name" value="${escapeHtml(r.name||'')}" />
+            <div class="review-actions">
+              <button class="btn secondary" data-action="delete" data-id="${r.id}">Supprimer</button>
+              <button class="btn" data-action="save" data-id="${r.id}">Enregistrer</button>
             </div>
+          `;
+          myList.appendChild(wrap);
 
-            <div class="field">
-              <label>Catégorie</label>
-              <select data-f="category">
-                <option value="restaurant" ${r.category==='restaurant'?'selected':''}>Restaurant</option>
-                <option value="snack" ${r.category==='snack'?'selected':''}>Snack</option>
-                <option value="boulangerie" ${r.category==='boulangerie'?'selected':''}>Boulangerie</option>
-                <option value="autre" ${r.category==='autre'?'selected':''}>Autre</option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label>Note</label>
-              <select data-f="note">
-                <option value="5" ${+r.note===5?'selected':''}>5 — Excellent</option>
-                <option value="4" ${+r.note===4?'selected':''}>4 — Bon</option>
-                <option value="3" ${+r.note===3?'selected':''}>3 — Moyen</option>
-                <option value="2" ${+r.note===2?'selected':''}>2 — Mauvais</option>
-                <option value="1" ${+r.note===1?'selected':''}>1 — Très mauvais</option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label>Adresse</label>
-              <input data-f="address" value="${escapeHtml(r.address||'')}" />
-            </div>
-
-            <div class="field">
-              <label>Commentaire</label>
-              <textarea data-f="comment" style="min-height:60px;">${escapeHtml(r.comment||'')}</textarea>
-            </div>
-          </div>
-
-          <div class="review-actions">
-            <button class="btn secondary" data-action="delete" data-id="${r.id}">Supprimer</button>
-            <button class="btn" data-action="save" data-id="${r.id}">Enregistrer</button>
-          </div>
-        `;
-        myList.appendChild(wrap);
-      });
-
-      // bind actions
-      myList.querySelectorAll('button[data-action="save"]').forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
-          const id = btn.getAttribute('data-id');
-          const card = btn.closest('.review-card');
-          const read = (sel)=> card.querySelector(`[data-f="${sel}"]`);
-          const patch = {
-            name: (read('name').value||'').trim(),
-            category: read('category').value,
-            note: Number(read('note').value),
-            address: (read('address').value||'').trim(),
-            comment: (read('comment').value||'').trim()
-          };
-
-          // si l’adresse a changé, régéocoder
-          try{
-            const all = reviewsRaw();
-            const i = all.findIndex(x=> x.id === id);
-            if (i < 0) return;
-            const prev = all[i];
-            if (patch.address && patch.address !== prev.address){
-              const { lat, lng } = await AZ.geocode(patch.address);
-              patch.lat = lat; patch.lng = lng;
+          // SAVE
+          wrap.querySelector('[data-action="save"]').addEventListener('click', async ()=>{
+            const read = (sel)=> wrap.querySelector(`[data-f="${sel}"]`);
+            const patch = {
+              name: (read('name').value||'').trim(),
+              category: read('category').value,
+              note: Number(read('note').value),
+              address: (read('address').value||'').trim(),
+              comment: (read('comment').value||'').trim()
+            };
+            try{
+              await saveReviewPatch(r.id, patch, r);
+              await reloadMarkers();
+              await renderMyReviews();
+              alert('Avis mis à jour.');
+            }catch(err){
+              alert(err?.message || 'Mise à jour impossible.');
             }
-            const next = { ...prev, ...patch, updated_at: Date.now() };
-            all[i] = next; saveReviewsRaw(all);
-            reloadMarkers();
-            renderMyReviews();
-            alert('Avis mis à jour.');
-          }catch(err){
-            alert(err?.message || 'Mise à jour impossible.');
-          }
-        });
-      });
+          });
 
-      myList.querySelectorAll('button[data-action="delete"]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const id = btn.getAttribute('data-id');
-          if (!confirm('Supprimer cet avis ?')) return;
-          const all = reviewsRaw();
-          const i = all.findIndex(x=> x.id === id);
-          if (i >= 0){
-            all.splice(i,1); saveReviewsRaw(all);
-            reloadMarkers();
-            renderMyReviews();
-          }
+          // DELETE
+          wrap.querySelector('[data-action="delete"]').addEventListener('click', async ()=>{
+            if (!confirm('Supprimer cet avis ?')) return;
+            try{
+              await deleteReview(r.id);
+              await reloadMarkers();
+              await renderMyReviews();
+            }catch(err){
+              alert(err?.message || 'Suppression impossible.');
+            }
+          });
         });
-      });
+      }catch(e){
+        myList.innerHTML = '<div class="muted">Chargement impossible.</div>';
+        console.warn(e);
+      }
     }
 
     // ========= Tabs (Carte / Compte) =========
