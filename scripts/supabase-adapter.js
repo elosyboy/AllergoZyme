@@ -1,56 +1,65 @@
 // scripts/supabase-adapter.js
-// Branche AZ (app.js) sur Supabase sans toucher tes pages
+// Branche l'API AZ (app.js) sur Supabase (auth + profils + reviews) sans toucher tes pages
 (function(){
   if (!window.__SUPABASE__ || !window.supabase || !window.AZ) return;
 
   const SB = supabase.createClient(window.__SUPABASE__.url, window.__SUPABASE__.anon);
   const AZ = window.AZ;
 
-  // ---- état mémoire ----
-  let _profile = null;                  // profil courant (sync pour AZ.currentUser)
-  let REVIEWS_CACHE = [];               // cache de tous les avis (pour la carte + "Mes avis")
-  const LOCAL_REVIEWS_KEY = 'az_reviews';
+  // ---------- État mémoire ----------
+  let _profile = null;                        // profil courant (renvoyé par AZ.currentUser)
+  let REVIEWS_CACHE = [];                     // cache des avis (carte + “Mes avis”)
+  const LOCAL_REVIEWS_KEY = 'az_reviews';     // même clé que l'app locale
   const origStore = AZ._store || { get:()=>null, set:()=>{}, del:()=>{} };
 
-  // ---- helpers ----
+  // ---------- Helpers ----------
   async function loadProfile() {
     const { data:{ user } } = await SB.auth.getUser();
     if (!user){ _profile = null; return null; }
-    const q = SB.from('profiles').select('*').eq('id', user.id).maybeSingle
-      ? SB.from('profiles').select('*').eq('id', user.id).maybeSingle()
-      : SB.from('profiles').select('*').eq('id', user.id).single(); // compat
-    const { data, error } = await q;
-    if (error && error.code !== 'PGRST116') throw error; // ignore "not found"
+
+    // prefer maybeSingle() (si dispo), sinon single() et on ignore 404
+    const q = SB.from('profiles').select('*').eq('id', user.id);
+    const exec = (q.maybeSingle ? q.maybeSingle() : q.single());
+    const { data, error } = await exec;
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = "not found"
     _profile = data || { id:user.id, email:user.email };
     return _profile;
   }
 
   async function syncReviewsFromServer(){
-    const { data, error } = await SB.from('reviews').select('*').order('created_at', { ascending:false });
+    const { data, error } = await SB
+      .from('reviews')
+      .select('*')
+      .order('created_at', { ascending:false });
     if (!error && Array.isArray(data)){
       REVIEWS_CACHE = data;
       try { origStore.set(LOCAL_REVIEWS_KEY, data); } catch {}
     }
   }
 
-  // sync au démarrage (best effort)
+  // Boot (best effort)
   loadProfile().catch(()=>{});
   syncReviewsFromServer().catch(()=>{});
 
-  // ---- AUTH ----
+  // Suivre les changements de session (onglet différent, etc.)
+  SB.auth.onAuthStateChange((_evt, _session)=>{
+    loadProfile().then(()=>syncReviewsFromServer()).catch(()=>{});
+  });
+
+  // ---------- AUTH ----------
   AZ.createUser = async (payload) => {
     const email = String(payload.email||'').trim().toLowerCase();
     if (!email) throw new Error('Email requis.');
     if (!payload.password || String(payload.password).length < 6)
       throw new Error('Mot de passe trop court (min 6).');
 
-    // 1) inscription
+    // 1) Auth
     const { data, error } = await SB.auth.signUp({ email, password: payload.password });
     if (error) throw new Error(error.message || 'Inscription impossible.');
     const user = data.user;
     if (!user) throw new Error('Inscription incomplète (vérification email ?).');
 
-    // 2) profil
+    // 2) Profil (RLS: WITH CHECK (auth.uid() = id))
     const profile = {
       id: user.id,
       email,
@@ -64,6 +73,7 @@
       city:      payload.city      || null,
       country:   payload.country   || 'France',
       allergies: Array.isArray(payload.allergies) ? payload.allergies : [],
+      // champs détaillés d’adresse (si fournis côté UI)
       building:      payload.building      || null,
       street_number: payload.street_number || null,
       street:        payload.street        || null,
@@ -105,13 +115,18 @@
   AZ.updateUser = async (partial) => {
     const { data:{ user } } = await SB.auth.getUser();
     if (!user) throw new Error('Non connecté.');
-    const { data, error } = await SB.from('profiles').update(partial).eq('id', user.id).select('*').single();
+    const { data, error } = await SB
+      .from('profiles')
+      .update(partial)
+      .eq('id', user.id)
+      .select('*')
+      .single();
     if (error) throw new Error(error.message || 'Mise à jour impossible.');
     _profile = data;
     return data;
   };
 
-  // ---- REVIEWS ----
+  // ---------- REVIEWS ----------
   AZ.addReview = async (review) => {
     const { data:{ user } } = await SB.auth.getUser();
     if (!user) throw new Error('Non connecté.');
@@ -126,16 +141,22 @@
       lng:      Number(review.lng),
       comment:  String(review.comment||'').trim() || null
     };
-    const { data, error } = await SB.from('reviews').insert(row).select('*').single();
+
+    const { data, error } = await SB
+      .from('reviews')
+      .insert(row)
+      .select('*')
+      .single();
     if (error) throw new Error(error.message || 'Enregistrement de l’avis impossible.');
 
-    // maj cache + local pour la carte + “Mes avis”
-    REVIEWS_CACHE.unshift(data);
+    // Ajoute le prénom pour l’UI (popup) + MAJ cache
+    const enriched = { ...data, user_firstname: (_profile && _profile.firstname) ? _profile.firstname : 'Anonyme' };
+    REVIEWS_CACHE.unshift(enriched);
     try { origStore.set(LOCAL_REVIEWS_KEY, REVIEWS_CACHE); } catch {}
-    return { ...data, user_firstname: (_profile && _profile.firstname) ? _profile.firstname : 'Anonyme' };
+    return enriched;
   };
 
-  // retourne la liste (cache) avec mêmes filtres que AZ.getReviews(local)
+  // Lecture (cache local avec filtres)
   AZ.getReviews = (filter = {}) => {
     const src = (REVIEWS_CACHE && REVIEWS_CACHE.length)
       ? REVIEWS_CACHE
@@ -147,12 +168,17 @@
     });
   };
 
-  // version online (rafraîchit le cache)
+  // Lecture “online” (rafraîchit le cache)
   AZ.getReviewsAsync = async (filter = {}) => {
-    const { data, error } = await SB.from('reviews').select('*').order('created_at', { ascending:false });
+    const { data, error } = await SB
+      .from('reviews')
+      .select('*')
+      .order('created_at', { ascending:false });
     if (!error && Array.isArray(data)){
-      REVIEWS_CACHE = data;
-      try { origStore.set(LOCAL_REVIEWS_KEY, data); } catch {}
+      // Injecter user_firstname si profil déjà connu
+      const fn = (_profile && _profile.firstname) ? _profile.firstname : null;
+      REVIEWS_CACHE = data.map(r => (fn && r.user_id === (_profile && _profile.id)) ? { ...r, user_firstname: fn } : r);
+      try { origStore.set(LOCAL_REVIEWS_KEY, REVIEWS_CACHE); } catch {}
     }
     return AZ.getReviews(filter);
   };
@@ -160,6 +186,7 @@
   AZ.updateReview = async (id, patch) => {
     const { data:{ user } } = await SB.auth.getUser();
     if (!user) throw new Error('Non connecté.');
+
     const upd = {
       name:     patch.name,
       category: patch.category,
@@ -170,20 +197,33 @@
     if (Number.isFinite(patch.lat) && Number.isFinite(patch.lng)){
       upd.lat = Number(patch.lat); upd.lng = Number(patch.lng);
     }
-    const { data, error } = await SB.from('reviews').update(upd).eq('id', id).eq('user_id', user.id).select('*').single();
+
+    const { data, error } = await SB
+      .from('reviews')
+      .update(upd)
+      .eq('id', id)
+      .eq('user_id', user.id)  // RLS ownership
+      .select('*')
+      .single();
     if (error) throw new Error(error.message || 'Mise à jour impossible.');
 
-    // maj cache + local
+    // MAJ cache + local
+    const enriched = { ...data, user_firstname: (_profile && _profile.firstname) ? _profile.firstname : undefined };
     const i = REVIEWS_CACHE.findIndex(x=> x.id === id);
-    if (i >= 0) REVIEWS_CACHE[i] = data;
+    if (i >= 0) REVIEWS_CACHE[i] = enriched;
     try { origStore.set(LOCAL_REVIEWS_KEY, REVIEWS_CACHE); } catch {}
-    return data;
+    return enriched;
   };
 
   AZ.deleteReview = async (id) => {
     const { data:{ user } } = await SB.auth.getUser();
     if (!user) throw new Error('Non connecté.');
-    const { error } = await SB.from('reviews').delete().eq('id', id).eq('user_id', user.id);
+
+    const { error } = await SB
+      .from('reviews')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
     if (error) throw new Error(error.message || 'Suppression impossible.');
 
     REVIEWS_CACHE = REVIEWS_CACHE.filter(r=> r.id !== id);
@@ -191,8 +231,8 @@
     return true;
   };
 
-  // ---- Pont transparent avec le panneau “Mes avis” (qui manipule localStorage) ----
-  // On intercepte AZ._store.set('az_reviews', <array>) pour propager en ligne (update/delete)
+  // ---------- Pont transparent avec l’ancien localStorage ----------
+  // Si une ancienne UI modifie 'az_reviews' directement, on propage en ligne (update/delete).
   let _syncing = false;
   AZ._store = {
     get(key, def){
@@ -213,12 +253,12 @@
         const toDelete = prev.filter(r=> !nextMap.has(r.id));
         const toUpdate = next.filter(r=>{
           const p = prevMap.get(r.id);
-          if (!p) return false; // (insertion via ce flux non supportée — create passe par AZ.addReview)
+          if (!p) return false; // (les créations doivent passer par AZ.addReview)
           const keys = ['name','category','note','address','comment','lat','lng'];
           return keys.some(k => (p[k] ?? null) !== (r[k] ?? null));
         });
 
-        // fire & forget (on laisse l’UI fluide)
+        // fire & forget
         toDelete.forEach(r=>{
           SB.auth.getUser().then(({ data:{ user } })=>{
             if (!user) return;
@@ -246,6 +286,6 @@
     del(key){ return origStore.del(key); }
   };
 
-  // expose le client si besoin de debug
+  // Expose le client pour debug si besoin
   AZ.sb = SB;
 })();
