@@ -390,7 +390,7 @@
         </select>
       </div>
 
-      <!-- Ajouts demandés : Adresse + Ville + Code postal -->
+      <!-- Adresse + Ville + Code postal -->
       <div class="field">
         <label for="rAddress">Adresse (numéro + rue)</label>
         <input id="rAddress" required placeholder="ex : 10 Rue de la Paix" />
@@ -437,7 +437,12 @@
   <script src="../scripts/supabase-adapter.js"></script>
 
   <script>
-    // ========= Logo robuste =========
+    /* ---------- Utils ---------- */
+    const escapeHtml = (s)=> String(s||'').replace(/[<>&]/g, c=> ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+    const colorByNote = (n)=>{ n=Number(n); return n>=4?'green':(n===3?'orange':'red'); };
+    const isFiniteLatLng = (o)=> Number.isFinite(Number(o?.lat)) && Number.isFinite(Number(o?.lng));
+
+    /* ---------- Logo ---------- */
     (function loadLogo(){
       const img = document.getElementById('app-logo'); if(!img) return;
       const tries = [
@@ -446,18 +451,15 @@
         './assets/logo.png','./assets/Logo.png','./assets/logo.svg'
       ];
       let i = 0, probe = new Image();
-      const next = () => {
-        if(i >= tries.length) return;
-        const url = tries[i++]; probe.onload = () => { img.src = url; }; probe.onerror = next; probe.src = url;
-      };
+      const next = () => { if(i>=tries.length) return; const url=tries[i++]; probe.onload=()=>{img.src=url}; probe.onerror=next; probe.src=url; };
       next();
     })();
 
-    // ========= Auth =========
+    /* ---------- Auth ---------- */
     AZ.requireAuth(AZ.path.to('signIn'));
     const me = AZ.currentUser();
 
-    // ========= Map =========
+    /* ---------- Map ---------- */
     const map = L.map('map', { zoomControl:true }).setView([48.8566,2.3522],12);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:20}).addTo(map);
     if (navigator.geolocation) {
@@ -474,29 +476,21 @@
     const markers = [];
     const cats = { restaurant:true, snack:true, boulangerie:true, autre:true };
 
-    const escapeHtml = (s)=> String(s||'').replace(/[<>&]/g, c=> ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
-    const colorByNote = (n)=>{ n=Number(n); return n>=4?'green':(n===3?'orange':'red'); };
-
-    function isFiniteLatLng(obj){
-      const lat = Number(obj?.lat), lng = Number(obj?.lng);
-      return Number.isFinite(lat) && Number.isFinite(lng);
-    }
-
     function addMarker(rec){
-      if(!isFiniteLatLng(rec)) return; // sécurité contre "Invalid LatLng"
+      if(!isFiniteLatLng(rec)) return; // évite Invalid LatLng
       const col = colorByNote(rec.note);
       const m = L.circleMarker([Number(rec.lat), Number(rec.lng)], {
         radius:9, color:col, fillColor:col, fillOpacity:.6, weight:2
       }).addTo(map);
 
-      const etab  = rec.name || 'Établissement';
-      const author= (rec && rec.user_firstname) ? rec.user_firstname : ((me && me.firstname) ? me.firstname : 'Anonyme');
+      const etab   = rec.name || 'Établissement';
+      const author = rec.user_firstname || (me && me.firstname) || 'Anonyme';
 
       m.bindPopup(`
         <div style="font-weight:800">${escapeHtml(etab)}</div>
-        <div style="margin:2px 0 4px 0">
+        <div style="margin:2px 0 4px">
           <span class="note-dot ${col}"></span>
-          Note&nbsp;: <b>${Number(rec.note)||'-'}</b> — par ${escapeHtml(author)}
+          Note : <b>${Number(rec.note)||'-'}</b> — par ${escapeHtml(author)}
         </div>
         <div style="font-size:12px;opacity:.8">${escapeHtml(rec.category)} • ${escapeHtml(rec.address||'')}</div>
         ${rec.comment ? `<div style="margin-top:6px;font-size:12px">${escapeHtml(rec.comment)}</div>`:''}
@@ -508,30 +502,22 @@
       markers.push(m);
     }
 
-    function clearMarkers(){
-      markers.forEach(m=> map.removeLayer(m));
-      markers.length = 0;
-    }
+    function clearMarkers(){ markers.forEach(m=> map.removeLayer(m)); markers.length = 0; }
 
-    // Préfère Supabase si dispo, sinon localStorage
     async function reloadMarkers(){
       clearMarkers();
       try{
         if (typeof AZ.getReviewsAsync === 'function') {
           const list = await AZ.getReviewsAsync();
-          (list || []).filter(isFiniteLatLng).forEach(addMarker);
+          (list || []).forEach(addMarker);
         } else {
-          (AZ.getReviews() || []).filter(isFiniteLatLng).forEach(addMarker);
+          (AZ.getReviews() || []).forEach(addMarker);
         }
-      }catch(e){
-        console.warn('reloadMarkers:', e);
-      }
+      }catch(e){ console.warn('reloadMarkers:', e); }
     }
-
-    // Charger existants
     reloadMarkers();
 
-    // Filtres catégories
+    /* ---------- Filtres ---------- */
     document.querySelectorAll('.chip').forEach(chip=>{
       chip.addEventListener('click', ()=>{
         const cat = chip.dataset.cat;
@@ -545,7 +531,7 @@
       });
     });
 
-    // Recherche : nom OU adresse/ville
+    /* ---------- Recherche ---------- */
     document.getElementById('searchInput').addEventListener('keydown', async (e)=>{
       if(e.key !== 'Enter') return;
       e.preventDefault();
@@ -556,24 +542,23 @@
 
       try{
         const { lat, lng } = await AZ.geocode(q);
-        if (Number.isFinite(lat) && Number.isFinite(lng)) map.setView([lat, lng], 15);
+        if (isFiniteLatLng({lat,lng})) map.setView([lat, lng], 15);
       }catch{}
     });
 
-    // ========= FAB menu =========
+    /* ---------- FAB menu ---------- */
     function toggleFabMenu(force){
       const show = typeof force==='boolean' ? force : fabMenu.classList.contains('hidden');
       fabMenu.classList.toggle('hidden', !show);
     }
     fab.addEventListener('click', ()=> toggleFabMenu());
     document.addEventListener('click', (e)=>{
-      if (!fabMenu.classList.contains('hidden') &&
-          !fabMenu.contains(e.target) && e.target !== fab){
+      if (!fabMenu.classList.contains('hidden') && !fabMenu.contains(e.target) && e.target !== fab){
         toggleFabMenu(false);
       }
     });
 
-    // ========= Modal Ajout =========
+    /* ---------- Modal Ajout ---------- */
     const modal = document.getElementById('modal');
     const backdrop = document.getElementById('backdrop');
     function openAdd(){ modal.classList.add('show'); backdrop.classList.add('show'); }
@@ -581,10 +566,7 @@
     document.getElementById('cancel').addEventListener('click', closeAdd);
     backdrop.addEventListener('click', ()=>{ closeAdd(); closeMyReviews(); });
 
-    document.getElementById('actAdd').addEventListener('click', ()=>{
-      toggleFabMenu(false);
-      openAdd();
-    });
+    document.getElementById('actAdd').addEventListener('click', ()=>{ toggleFabMenu(false); openAdd(); });
 
     document.getElementById('reviewForm').addEventListener('submit', async (e)=>{
       e.preventDefault();
@@ -604,7 +586,8 @@
       const address = [addrLine, `${zip} ${city}`].filter(Boolean).join(', ');
       try{
         const { lat, lng } = await AZ.geocode([addrLine, city, zip].filter(Boolean).join(' '));
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Coordonnées invalides.');
+        if (!isFiniteLatLng({lat,lng})) throw new Error('Adresse introuvable.');
+
         const rec = await AZ.addReview({ name, category, note:Number(note), address, comment, lat, lng });
         addMarker(rec);
         map.setView([lat, lng], 16);
@@ -615,7 +598,7 @@
       }
     });
 
-    // ========= Mes avis (Supabase si dispo, sinon local) =========
+    /* ---------- Mes avis (toujours compatible Supabase) ---------- */
     const myModal = document.getElementById('myReviewsModal');
     const myList  = document.getElementById('myReviewsList');
     const btnCloseMy = document.getElementById('closeMyReviews');
@@ -625,35 +608,27 @@
     document.getElementById('actMine').addEventListener('click', ()=>{ toggleFabMenu(false); openMyReviews(); });
     btnCloseMy.addEventListener('click', closeMyReviews);
 
-    const USING_REMOTE = (typeof AZ.getReviewsAsync === 'function') && !!AZ.sb;
-
     async function loadMyReviews(){
-      if (USING_REMOTE && me && me.id){
-        const { data, error } = await AZ.sb.from('reviews')
-          .select('*')
-          .eq('user_id', me.id)
-          .order('created_at', { ascending:false });
-        if (error) throw new Error(error.message||'Chargement impossible.');
-        return data || [];
-      } else {
-        const all = AZ._store.get('az_reviews', []) || [];
-        return (all || []).filter(r => r.user_id === (me && me.id))
-                          .sort((a,b)=> (b.created_at||0) - (a.created_at||0));
+      if (typeof AZ.getReviewsAsync === 'function' && me && me.id){
+        const arr = await AZ.getReviewsAsync({ user_id: me.id });
+        return (arr || []).filter(r=> r.user_id === me.id).sort((a,b)=> new Date(b.created_at) - new Date(a.created_at||0));
       }
+      // fallback local
+      const all = AZ.getReviews ? AZ.getReviews() : (AZ._store.get('az_reviews', [])||[]);
+      return (all || []).filter(r => r.user_id === (me && me.id))
+                        .sort((a,b)=> (b.created_at||0) - (a.created_at||0));
     }
 
     async function saveReviewPatch(id, patch, prev){
-      // si l’adresse change et que pas de lat/lng fournis -> géocoder
+      // géocoder si l’adresse change et pas de lat/lng fournis
       if (patch.address && (!prev || patch.address !== prev.address) && (!patch.lat || !patch.lng)) {
         try{
           const { lat, lng } = await AZ.geocode(patch.address);
-          patch.lat = lat; patch.lng = lng;
+          if (isFiniteLatLng({lat,lng})) { patch.lat = lat; patch.lng = lng; }
         }catch{}
       }
-
-      if (USING_REMOTE){
-        const { error } = await AZ.sb.from('reviews').update(patch).eq('id', id);
-        if (error) throw new Error(error.message || 'Mise à jour impossible.');
+      if (typeof AZ.updateReview === 'function'){
+        await AZ.updateReview(id, patch);
       }else{
         const arr = AZ._store.get('az_reviews', []) || [];
         const i = arr.findIndex(x=> x.id === id);
@@ -663,9 +638,8 @@
     }
 
     async function deleteReview(id){
-      if (USING_REMOTE){
-        const { error } = await AZ.sb.from('reviews').delete().eq('id', id);
-        if (error) throw new Error(error.message || 'Suppression impossible.');
+      if (typeof AZ.deleteReview === 'function'){
+        await AZ.deleteReview(id);
       }else{
         const arr = AZ._store.get('az_reviews', []) || [];
         const i = arr.findIndex(x=> x.id === id);
@@ -776,7 +750,7 @@
       }
     }
 
-    // ========= Tabs (Carte / Compte) =========
+    /* ---------- Tabs (Carte / Compte) ---------- */
     const tabMap = document.getElementById('tab-map');
     const tabAcc = document.getElementById('tab-account');
     const panelAcc = document.getElementById('panel-account');
@@ -799,7 +773,7 @@
     tabMap.addEventListener('click', ()=> setTab('map'));
     tabAcc.addEventListener('click', ()=> setTab('account'));
 
-    // ========= Compte : affichage & sauvegarde =========
+    /* ---------- Compte ---------- */
     const u = AZ.currentUser() || {};
     const PREF_KEY = (id)=> `az_prefs_${id||'anon'}`;
     const DIARY_KEY= (id)=> `az_diary_${id||'anon'}`;
@@ -872,7 +846,7 @@
 
     document.getElementById('logout').addEventListener('click', ()=> AZ.signOut());
 
-    // ========= Journal (carnet) =========
+    /* ---------- Journal ---------- */
     function readDiary(){ return JSON.parse(localStorage.getItem(DIARY_KEY(u.id))||'[]'); }
     function writeDiary(list){ localStorage.setItem(DIARY_KEY(u.id), JSON.stringify(list)); }
     function sevClass(n){ n=+n; if(n>=4) return 'bad'; if(n===3) return 'mid'; return 'good'; }
@@ -934,7 +908,7 @@
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     });
 
-    // Premier rendu
+    /* ---------- First render ---------- */
     fillAccount();
     setTab('map');
     window.addEventListener('resize', ()=> map.invalidateSize());
